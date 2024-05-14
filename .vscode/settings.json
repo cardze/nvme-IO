@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "zbd.h": "c",
+        "msg.h": "c",
+        "libnvme.h": "c"
+    }
+}

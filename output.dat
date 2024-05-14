@@ -1,0 +1,23 @@
+The block size of /dev/nvme0n1 is 4096.
+ latency: zone reset at 0: 6360 us
+ latency: zone write at 0: 39 us
+ The wp of zone 0 is 1000.
+
+ latency: zone append at 0: 24 us, and data start at 1
+ The wp of zone 0 is 2000.
+
+ latency: zone reset at 1: 7558 us
+ latency: zone write at 1: 81 us
+ The wp of zone 1 is 1000.
+
+ latency: zone append at 1: 49 us, and data start at 100001
+ The wp of zone 1 is 2000.
+
+ latency: zone reset at 2: 7682 us
+ latency: zone write at 2: 57 us
+ The wp of zone 2 is 1000.
+
+ latency: zone append at 2: 50 us, and data start at 200001
+ The wp of zone 2 is 2000.
+
+The value is 0
