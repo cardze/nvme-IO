@@ -113,14 +113,15 @@ int main(int argc, char **argv)
 
         // nvme write
         gettimeofday(&start, NULL);
-        ret = ioctl(fd, NVME_IOCTL_IO_CMD, &nvme_cmd);
+        // ret = ioctl(fd, NVME_IOCTL_IO_CMD, &nvme_cmd);
+        ret = pwrite(fd, data, SIZE, (zone_index << 20) << 12);
         gettimeofday(&end, NULL);
-        if (ret != 0)
+        if (ret < 0)
         {
             err_writing_device(ret, device);
             goto out;
         }
-        printf(" latency: zone write at %d: %llu us\n",
+        printf(" latency: zone pwrite at %d: %llu us\n",
                zone_index,
                elapsed_utime(start, end));
         unsigned long long wp = 0;
