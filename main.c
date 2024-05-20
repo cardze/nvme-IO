@@ -16,20 +16,11 @@ unsigned long long elapsed_utime(struct timeval start_time,
     return err;
 }
 
-int main(int argc, char **argv)
-{
+int print_stars_to(char * device){
     int ret = 0;
     int fd, zbd_fd;
     unsigned int dev_nsid;
-    char * device;
     unsigned long long ret_address;
-
-    if (argc < 2)
-    {
-        wrong_arg();
-        return -1;
-    }
-    device = argv[1];
     unsigned char data[SIZE] = {0};
     for (register int i = 0; i < SIZE; i++)
     {
@@ -54,10 +45,6 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    // if(fd != zbd_fd){
-    //     printf("zbd_fd != fd\n");
-    // }
-
     ret = nvme_get_nsid(fd, &dev_nsid);
     if (ret < 0){
         no_namespace_id(device);
@@ -67,7 +54,6 @@ int main(int argc, char **argv)
     // prepare passthru struct
     struct nvme_passthru_cmd nvme_cmd;
     struct nvme_zns_append_args append_cmd;
-    // unsigned int result = 0;
     struct timeval start,
         end; // timing
 
@@ -153,5 +139,20 @@ out:
     close(fd);
     zbd_close(fd);
     show_int(ret);
+    return ret;
+}
+
+int main(int argc, char **argv)
+{
+    int ret = 0;
+    char * device;
+
+    if (argc != 2)
+    {
+        wrong_arg();
+        return -1;
+    }
+    device = argv[1];
+    ret = print_stars_to(device);
     return ret;
 }
