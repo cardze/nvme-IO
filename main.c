@@ -1,12 +1,35 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <liburing.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <assert.h>
+
 #include "zns.h"
 #include "msg.h"
 
 #define SIZE 4095
 #define BUF_SIZE 4096
-#define BLOCK_SIZE 4096
+#define QD  32
+
+
+
+void handle_error(const char *msg) {
+    perror(msg);
+    exit(EXIT_FAILURE);
+}
+
+void* aligned_alloc(size_t alignment, size_t size) {
+    void *ptr;
+    if (posix_memalign(&ptr, alignment, size)) {
+        handle_error("posix_memalign");
+    }
+    return ptr;
+}
 
 unsigned long long elapsed_utime(struct timeval start_time,
                                  struct timeval end_time)
@@ -18,7 +41,7 @@ unsigned long long elapsed_utime(struct timeval start_time,
 
 int print_stars_to(char * device){
     int ret = 0;
-    int fd, zbd_fd;
+    int fd = 0;
     unsigned int dev_nsid;
     unsigned long long ret_address;
     unsigned char data[SIZE] = {0};
@@ -52,7 +75,7 @@ int print_stars_to(char * device){
     }
     // write the data
     // prepare passthru struct
-    struct nvme_passthru_cmd nvme_cmd;
+    struct nvme_passthru_cmd64 nvme_cmd;
     struct nvme_zns_append_args append_cmd;
     struct timeval start,
         end; // timing
@@ -83,7 +106,7 @@ int print_stars_to(char * device){
         nvme_cmd.cdw10 = (0x0 | (zone_index << 20)); // slba
         nvme_cmd.cdw11 = 0;
         nvme_cmd.cdw12 = (SIZE / block_size); // sector number
-        nvme_cmd.result = NULL;
+        nvme_cmd.result = (__u64)&ret_address;
 
         memset(&append_cmd, 0, sizeof(struct nvme_zns_append_args));
         append_cmd.args_size = sizeof(append_cmd);
@@ -99,8 +122,8 @@ int print_stars_to(char * device){
 
         // nvme write
         gettimeofday(&start, NULL);
-        // ret = ioctl(fd, NVME_IOCTL_IO_CMD, &nvme_cmd);
-        ret = pwrite(fd, data, SIZE, (zone_index << 20) << 12);
+        ret = ioctl(fd, NVME_IOCTL_IO64_CMD, &nvme_cmd);
+        // ret = pwrite(fd, data, SIZE, (zone_index << 20) << 12);
         gettimeofday(&end, NULL);
         if (ret < 0)
         {
@@ -110,9 +133,9 @@ int print_stars_to(char * device){
         printf(" latency: zone pwrite at %d: %llu us\n",
                zone_index,
                elapsed_utime(start, end));
-        unsigned long long wp = 0;
+        int wp = 0;
         get_zone_wp(device, zone_index, &wp);
-        printf(" The wp of zone %d is %llx.\n\n", zone_index, wp);
+        printf(" The wp of zone %d is %x.\n\n", zone_index, wp);
         // nvme zns append
         gettimeofday(&start, NULL);
         ret = nvme_zns_append(&append_cmd);
@@ -127,7 +150,7 @@ int print_stars_to(char * device){
                elapsed_utime(start, end),
                ret_address);
         get_zone_wp(device, zone_index, &wp);
-        printf(" The wp of zone %d is %llx.\n\n", zone_index, wp);
+        printf(" The wp of zone %d is %x.\n\n", zone_index, wp);
     }
 
     memset(data, 0, SIZE);
@@ -142,17 +165,144 @@ out:
     return ret;
 }
 
+
+void write_to_zns(struct io_uring *ring, int fd, const char *buffer, unsigned int zone) {
+    struct io_uring_sqe *sqe;
+    struct io_uring_cqe *cqe;
+    struct iovec iov;
+    int ret;
+
+    printf("Attempting to get an SQE for write operation...\n");
+    sqe = io_uring_get_sqe(ring);
+    if (!sqe) {
+        handle_error("io_uring_get_sqe returned NULL");
+    }
+    printf("Successfully obtained an SQE for write operation.\n");
+
+    iov.iov_base = (void *)buffer;
+    iov.iov_len = BUF_SIZE;
+
+    io_uring_prep_writev(sqe, fd, &iov, 1, zone * BUF_SIZE);
+
+    printf("Submitting write request...\n");
+    ret = io_uring_submit(ring);
+    if (ret < 0) {
+        handle_error("io_uring_submit");
+    }
+    printf("Write request submitted.\n");
+
+    ret = io_uring_wait_cqe(ring, &cqe);
+    if (ret < 0) {
+        handle_error("io_uring_wait_cqe");
+    }
+
+    if (cqe->res < 0) {
+        errno = -cqe->res;
+        handle_error("io_uring write");
+    }
+
+    io_uring_cqe_seen(ring, cqe);
+
+    printf("Write operation completed successfully.\n");
+}
+
+
+
+
+void read_from_zns(struct io_uring *ring, int fd, char *buffer, unsigned int zone) {
+    struct io_uring_sqe *sqe;
+    struct io_uring_cqe *cqe;
+    struct iovec iov;
+    int ret;
+
+    printf("Attempting to get an SQE for read operation...\n");
+    sqe = io_uring_get_sqe(ring);
+    if (!sqe) {
+        handle_error("io_uring_get_sqe returned NULL");
+    }
+    printf("Successfully obtained an SQE for read operation.\n");
+
+    iov.iov_base = buffer;
+    iov.iov_len = BUF_SIZE;
+
+    io_uring_prep_readv(sqe, fd, &iov, 1, zone * BUF_SIZE);
+
+    printf("Submitting read request...\n");
+    ret = io_uring_submit(ring);
+    if (ret < 0) {
+        handle_error("io_uring_submit");
+    }
+    printf("Read request submitted.\n");
+
+    ret = io_uring_wait_cqe(ring, &cqe);
+    if (ret < 0) {
+        handle_error("io_uring_wait_cqe");
+    }
+
+    if (cqe->res < 0) {
+        errno = -cqe->res;
+        handle_error("io_uring read");
+    }
+
+    io_uring_cqe_seen(ring, cqe);
+
+    printf("Read operation completed successfully.\n");
+}
+
 int main(int argc, char **argv)
 {
-    int ret = 0;
-    char * device;
-
-    if (argc != 2)
-    {
-        wrong_arg();
-        return -1;
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <device> <zone>\n", argv[0]);
+        exit(EXIT_FAILURE);
     }
-    device = argv[1];
-    ret = print_stars_to(device);
-    return ret;
+
+    const char *device = argv[1];
+    unsigned int zone = atoi(argv[2]);
+    struct io_uring ring;
+    char write_buffer[BUF_SIZE];
+    char read_buffer[BUF_SIZE];
+    int fd, ret;
+
+    // clear zone
+    ret = clear_zone(device, zone);
+    if (ret < 0) {
+        handle_error("clear_zone");
+    }
+
+    // Open the ZNS device
+    fd = open(device, O_RDWR | O_DIRECT);
+    if (fd < 0) {
+        handle_error("open");
+    }
+
+    // Initialize io_uring
+    ret = io_uring_queue_init(8, &ring, 0);
+    if (ret < 0) {
+        handle_error("io_uring_queue_init");
+    }
+
+    // Prepare the data to write
+    memset(write_buffer, 'A', BUF_SIZE);
+
+    // Write to ZNS
+    write_to_zns(&ring, fd, write_buffer, zone);
+
+    // Prepare the buffer for reading
+    memset(read_buffer, 0, BUF_SIZE);
+
+    // Read from ZNS
+    read_from_zns(&ring, fd, read_buffer, zone);
+
+    // Compare the buffers
+    if (memcmp(write_buffer, read_buffer, BUF_SIZE) == 0) {
+        printf("Read content matches written content.\n");
+    } else {
+        printf("Read content does NOT match written content.\n");
+    }
+
+    // Cleanup
+    io_uring_queue_exit(&ring);
+    close(fd);
+
+    return 0;
 }

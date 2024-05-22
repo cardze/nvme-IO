@@ -2,6 +2,8 @@
     "files.associations": {
         "zbd.h": "c",
         "msg.h": "c",
-        "libnvme.h": "c"
+        "libnvme.h": "c",
+        "uuid.h": "c",
+        "liburing.h": "c"
     }
 }

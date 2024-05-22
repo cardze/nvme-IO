@@ -1,6 +1,7 @@
 #include "msg.h"
 #include "zns.h"
 
+// if you want to get zbd_info, you need to open the device
 
 int get_block_size(char *device, unsigned int *size){
     int ret = 0;
@@ -17,7 +18,7 @@ int get_zone_wp(char * device, int zone_num, int *wp){
     int fd = 0;
     struct zbd_info dev_info;
     struct zbd_zone *zones;
-    int num_of_zone =0;
+    unsigned int num_of_zone =0;
 
     fd = zbd_open(device, O_RDONLY, &dev_info);
     if(fd < 0){
@@ -38,7 +39,7 @@ bool zone_is_clear(char * device, int zone_num){
     int fd = 0;
     struct zbd_info dev_info;
     struct zbd_zone *zones;
-    int num_of_zone =0;
+    unsigned int num_of_zone =0;
 
     fd = zbd_open(device, O_RDONLY, &dev_info);
     zbd_list_zones(fd, (zone_num << 20),0, ZBD_RO_ALL, &zones, &num_of_zone);
@@ -50,10 +51,6 @@ bool zone_is_clear(char * device, int zone_num){
 int clear_first_zone(char *device){
     int ret = 0;
     int fd = 0;
-    struct zbd_info dev_info;
-    struct zbd_zone *zones;
-    int num_of_zone =0;
-
 
     fd = open(device, O_RDWR);
 
@@ -78,12 +75,9 @@ int clear_first_zone(char *device){
     return ret;
 }
 
-int clear_zone(char * device, int zone_num){
+int clear_zone(const char * device, int zone_num){
     int ret = 0;
     int fd = 0;
-    struct zbd_info dev_info;
-    struct zbd_zone *zones;
-    int num_of_zone =0;
 
     fd = open(device, O_RDWR);
     __u32 result = 0;
