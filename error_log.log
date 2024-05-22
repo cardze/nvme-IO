@@ -1,0 +1,6 @@
+input:
+sudo ./bin/main /dev/nvme0n1 0
+
+output: 
+Attempting to get an SQE for write operation...
+io_uring_get_sqe returned NULL: Success
